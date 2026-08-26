@@ -105,8 +105,11 @@ Status MemoryScratchSinkOperatorX::sink_impl(RuntimeState* state, Block* input_b
     std::shared_ptr<arrow::Schema> block_arrow_schema;
     {
         SCOPED_TIMER(local_state._get_arrow_schema_timer);
-        // After expr executed, use recaculated schema as final schema
-        RETURN_IF_ERROR(get_arrow_schema_from_block(block, &block_arrow_schema, state->timezone()));
+        // After expr executed, use recaculated schema as final schema.
+        // DATETIMEV2 is timezone-naive (JDBC / Flight). TScan used session timezone here, so
+        // Spark/Flink Thrift readers saw unix_timestamp(default CST) and shifted wall clocks.
+        RETURN_IF_ERROR(get_arrow_schema_from_block(block, &block_arrow_schema, state->timezone(),
+                                                    /*datetime_naive=*/true));
     }
     {
         SCOPED_TIMER(local_state._convert_block_to_arrow_batch_timer);

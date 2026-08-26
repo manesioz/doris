@@ -53,8 +53,11 @@ std::shared_ptr<arrow::Field> create_arrow_field_with_metadata(
         const std::string& field_name, const std::shared_ptr<arrow::DataType>& arrow_type,
         bool is_nullable, PrimitiveType primitive_type);
 
+// datetime_naive matches convert_to_arrow_type / get_arrow_schema_from_expr_ctxs. TScan /
+// MemoryScratchSink must pass true so Spark/Flink Thrift scans keep DATETIME wall-clock values
+// (same contract as Arrow Flight). Default false preserves Python UDF/UDAF callers.
 Status get_arrow_schema_from_block(const Block& block, std::shared_ptr<arrow::Schema>* result,
-                                   const std::string& timezone);
+                                   const std::string& timezone, bool datetime_naive = false);
 
 Status get_arrow_schema_from_expr_ctxs(const VExprContextSPtrs& output_vexpr_ctxs,
                                        std::shared_ptr<arrow::Schema>* result,

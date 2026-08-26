@@ -729,4 +729,41 @@ TEST(DataTypeSerDeArrowTest, DateTimeV2ArrowEncodingFollowsSchemaTimezone) {
     EXPECT_EQ(1783004400123456, naive_array->Value(0));
 }
 
+TEST(DataTypeSerDeArrowTest, GetArrowSchemaFromBlockDatetimeNaiveMatchesFlight) {
+    auto datetime_column = ColumnVector<TYPE_DATETIMEV2>::create();
+    DateV2Value<DateTimeV2ValueType> datetime_value;
+    datetime_value.unchecked_set_time(2026, 8, 24, 10, 0, 9, 0);
+    datetime_column->insert(Field::create_field<TYPE_DATETIMEV2>(datetime_value));
+
+    auto datetime_type = std::make_shared<DataTypeDateTimeV2>(3);
+    Block block;
+    block.insert(ColumnWithTypeAndName(datetime_column->get_ptr(), datetime_type, "located_at"));
+
+    std::shared_ptr<arrow::Schema> aware_schema;
+    auto status = get_arrow_schema_from_block(block, &aware_schema, "Asia/Shanghai");
+    ASSERT_TRUE(status.ok()) << status;
+    const auto aware_type =
+            std::static_pointer_cast<arrow::TimestampType>(aware_schema->field(0)->type());
+    EXPECT_EQ("Asia/Shanghai", aware_type->timezone());
+
+    std::shared_ptr<arrow::Schema> naive_schema;
+    status = get_arrow_schema_from_block(block, &naive_schema, "Asia/Shanghai",
+                                         /*datetime_naive=*/true);
+    ASSERT_TRUE(status.ok()) << status;
+    const auto naive_type =
+            std::static_pointer_cast<arrow::TimestampType>(naive_schema->field(0)->type());
+    EXPECT_EQ(arrow::TimeUnit::MILLI, naive_type->unit());
+    EXPECT_TRUE(naive_type->timezone().empty());
+
+    const auto shanghai = cctz::fixed_time_zone(std::chrono::hours(8));
+    std::shared_ptr<arrow::RecordBatch> naive_batch;
+    status = convert_to_arrow_batch(block, naive_schema, arrow::default_memory_pool(), &naive_batch,
+                                    shanghai);
+    ASSERT_TRUE(status.ok()) << status;
+    const auto naive_array =
+            std::static_pointer_cast<arrow::TimestampArray>(naive_batch->column(0));
+    // 2026-08-24 10:00:09.000 as a UTC wall-clock epoch (not 02:00 after CST unix_timestamp).
+    EXPECT_EQ(1787565609000, naive_array->Value(0));
+}
+
 } // namespace doris
